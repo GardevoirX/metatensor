@@ -314,9 +314,8 @@ static void dlpack_versioned_deleter(DLManagedTensorVersioned* self) {
 }
 
 DLDevice TorchDataArray::device() const {
-    if (!tensor_.has_storage()) {
-        // use the same device as "meta", since we can not access the
-        // corresponding data
+    if (tensor_.is_meta()) {
+        // use the device of "meta"
         return DLDevice{kDLExtDev, 0};
     }
     return torch_device_to_dlpack(tensor_.device());
