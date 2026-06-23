@@ -12,12 +12,52 @@
 
 using namespace metatensor_torch;
 
+static torch::Tensor materialize_labels_values_if_needed(torch::Tensor values) {
+    if (values.is_meta() || values.has_storage()) {
+        return values;
+    }
+
+    auto cpu_values = values.to(torch::kCPU).contiguous();
+    auto flat_values = cpu_values.reshape({-1});
+
+    auto materialized = std::make_shared<std::vector<int32_t>>();
+    materialized->reserve(static_cast<size_t>(flat_values.numel()));
+
+    for (int64_t i = 0; i < flat_values.numel(); i++) {
+        materialized->push_back(flat_values.index({i}).item<int32_t>());
+    }
+
+    auto sizes = std::vector<int64_t>(
+        values.sizes().begin(),
+        values.sizes().end()
+    );
+
+    auto materialized_values = torch::from_blob(
+        materialized->data(),
+        sizes,
+        [materialized](void*) {},
+        torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU)
+    );
+
+    auto target_device = values.device();
+    if (target_device.type() != torch::kCPU) {
+        materialized_values = materialized_values.to(
+            target_device,
+            /*non_blocking=*/false,
+            /*copy=*/true
+        );
+    }
+
+    return materialized_values;
+}
+
 /// Create an mts_array_t wrapping a torch::Tensor for use as labels values.
 ///
 /// Uses TorchDataArray (the same DataArrayBase subclass used for block data)
 /// so that the values array has full DLPack, device, and origin support
 /// without duplicating the vtable logic.
 static metatensor::MtsArray torch_tensor_to_labels_mts_array(torch::Tensor tensor) {
+    tensor = materialize_labels_values_if_needed(std::move(tensor));
     auto cxx_array = std::unique_ptr<metatensor::DataArrayBase>(
         new metatensor_torch::TorchDataArray(std::move(tensor))
     );
@@ -144,10 +184,29 @@ LabelsHolder::LabelsHolder(torch::IValue names, torch::Tensor values):
     }
 
     auto array = torch_tensor_to_labels_mts_array(values_);
-    if (values_.is_meta() || !values_.has_storage()) {
+    if (values_.is_meta()) {
         // do not check for uniqueness if the tensor is on meta device or does
         // not have storage, since it does not contain real data.
         labels_ = metatensor::Labels(names_, std::move(array), metatensor::assume_unique{});
+    } else if (!values_.has_storage()) {
+        // not meta, but no storage, so it is TensorWrapper used in jvp, `values_` need 
+        // to be materizlied
+        auto cpu_values = values_.to(torch::kCPU);
+        auto materialized = std::make_shared<std::vector<int32_t>>();
+        materialized->reserve(cpu_values.numel());
+        for (int64_t i = 0; i < cpu_values.size(0); i++) {
+            for (int64_t j = 0; j < cpu_values.size(1); j++) {
+                materialized->push_back(cpu_values.index({i, j}).item<int32_t>());
+            }
+        }
+        auto materialized_values = torch::from_blob(
+            materialized->data(),
+            {static_cast<int64_t>(values_.size(0)), static_cast<int64_t>(values_.size(1))},
+            [materialized](void*) {},
+            torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU)
+        );
+        array = torch_tensor_to_labels_mts_array(materialized_values);
+        labels_ = metatensor::Labels(names_, std::move(array));
     } else {
         labels_ = metatensor::Labels(names_, std::move(array));
     }
