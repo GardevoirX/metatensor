@@ -69,6 +69,11 @@ filterwarnings = [
     "ignore:`torch.jit.interface` is deprecated. Please use `torch.compile` instead:DeprecationWarning",
     "ignore:`torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`:DeprecationWarning",
     "ignore:`torch.jit.script` is not supported in Python 3.14:DeprecationWarning",
+    "ignore:`torch.jit.interface` is deprecated.:FutureWarning",
+    "ignore:`torch.jit.script` is deprecated.:FutureWarning",
+    "ignore:`torch.jit.script` is not supported in Python 3.14:FutureWarning",
+    "ignore:`torch.jit.save` is deprecated.:FutureWarning",
+    "ignore:`torch.jit.load` is deprecated.:FutureWarning",
 ]
 
 ### ======================================================================== ###

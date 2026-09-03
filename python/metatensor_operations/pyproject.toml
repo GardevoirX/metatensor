@@ -47,4 +47,6 @@ python_files = ["*.py"]
 testpaths = ["tests"]
 filterwarnings = [
     "error",
+    "ignore:`torch.jit.save` is not supported in Python 3.14:FutureWarning",
+    "ignore:`torch.jit.load` is not supported in Python 3.14:FutureWarning",
 ]
